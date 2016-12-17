@@ -7,6 +7,7 @@
 //-----------------------------------------------------------------------------
 
 #include "lz4/lz4.h"
+#include "imgui_remote_webby.h"
 #include <stdio.h>
 #include <vector>
 
@@ -53,8 +54,6 @@ struct IWebSocketServer
 	virtual void OnError() { }
 };
 */
-
-#include "imgui_remote_webby.h"
 
 
 //------------------
@@ -419,12 +418,12 @@ void RemoteDraw(ImDrawList** const cmd_lists, int cmd_lists_count)
 {
 	if (GServer.ClientActive)
 	{
-		static int sendframe = 0;
-		if (sendframe++ < 2) // every 2 frames, @TWEAK
-		{
-			return;
-		}
-		sendframe = 0;
+		//static int sendframe = 0;
+		//if (sendframe++ < 2) // every 2 frames, @TWEAK
+		//{
+		//	return;
+		//}
+		//sendframe = 0;
 
 		unsigned int totalSize = sizeof(unsigned int); // cmd_lists_count
 		for(int n = 0; n < cmd_lists_count; n++)

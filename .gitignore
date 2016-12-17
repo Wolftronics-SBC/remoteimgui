@@ -12,3 +12,5 @@
 *.opensdf
 *xcuserdata*
 *.xccheckout
+/ARM/
+/ARM64/
