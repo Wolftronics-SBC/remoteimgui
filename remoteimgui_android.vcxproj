@@ -56,6 +56,8 @@
     <ClCompile Include="src\app\imgui\imgui.cpp" />
     <ClCompile Include="src\app\imgui\imgui_demo.cpp" />
     <ClCompile Include="src\app\imgui\imgui_draw.cpp" />
+    <ClCompile Include="src\app\imgui_remote.cpp" />
+    <ClCompile Include="src\app\imgui_remote_webby.cpp" />
     <ClCompile Include="src\app\lz4\lz4.c" />
     <ClCompile Include="src\app\lz4\lz4frame.c" />
     <ClCompile Include="src\app\lz4\lz4hc.c" />

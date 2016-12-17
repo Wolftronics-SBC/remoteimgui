@@ -7,8 +7,9 @@ set(imgui_src_files imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_demo.cpp)
 file(GLOB_RECURSE imgui_example_files imgui/examples/*.cpp imgui/examples/*.h)
 file(GLOB_RECURSE example_files example/*.cpp example/*.h)
 set(header_files imgui_remote.h imgui_remote_webby.h)
+set(src_files imgui_remote.cpp imgui_remote_webby.cpp)
 
-add_library(remoteimgui ${header_files} ${lz4} ${webby} ${imgui_src_files} ${imgui_header_files} ${imgui_example_files} ${example_files})
+add_library(remoteimgui ${src_files} ${header_files} ${lz4} ${webby} ${imgui_src_files} ${imgui_header_files} ${imgui_example_files} ${example_files})
 
 set_source_files_properties(${imgui_example_files} PROPERTIES HEADER_FILE_ONLY true)
 set_source_files_properties(${example_files} PROPERTIES HEADER_FILE_ONLY true)

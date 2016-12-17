@@ -5,6 +5,7 @@
 // Webby https://github.com/deplinenoise/webby
 // LZ4   https://code.google.com/p/lz4/
 //-----------------------------------------------------------------------------
+#pragma once
 
 #include "webby/webby.h"
 
@@ -25,13 +26,6 @@
 struct IWebSocketServer;
 
 IWebSocketServer *s_WebSocketServer;
-
-static void onLog         (const char* text);
-static int  onDispatch    (struct WebbyConnection *connection);
-static int  onConnect     (struct WebbyConnection *connection);
-static void onConnected   (struct WebbyConnection *connection);
-static void onDisconnected(struct WebbyConnection *connection);
-static int  onFrame       (struct WebbyConnection *connection, const struct WebbyWsFrame *frame);
 
 struct IWebSocketServer
 {
@@ -155,40 +149,42 @@ struct IWebSocketServer
 			WebbySendFrame(Client, WEBBY_WS_OP_BINARY_FRAME, data, size);
 		}
 	}
+
+
+
+	static void onLog(const char* text)
+	{
+		//printf("[WsOnLog] %s\n", text);
+	}
+
+	static int onDispatch(struct WebbyConnection *connection)
+	{
+		//printf("[WsOnDispatch] %s\n", connection->request.uri);
+		return 1;
+	}
+
+	static int onConnect(struct WebbyConnection *connection)
+	{
+		//printf("[WsOnConnect] %s\n", connection->request.uri);
+		return 0;
+	}
+
+	static void onConnected(struct WebbyConnection *connection)
+	{
+		//printf("[WsOnConnected]\n");
+		s_WebSocketServer->WsOnConnected(connection);
+	}
+
+	static void onDisconnected(struct WebbyConnection *connection)
+	{
+		//printf("[WsOnDisconnected]\n");
+		s_WebSocketServer->WsOnDisconnected(connection);
+	}
+
+	static int onFrame(struct WebbyConnection *connection, const struct WebbyWsFrame *frame)
+	{
+		//printf("[WsOnFrame]\n");
+		return s_WebSocketServer->WsOnFrame(connection, frame);
+	}
+
 };
-
-
-static void onLog(const char* text)
-{
-	//printf("[WsOnLog] %s\n", text);
-}
-
-static int onDispatch(struct WebbyConnection *connection)
-{
-	//printf("[WsOnDispatch] %s\n", connection->request.uri);
-	return 1;
-}
-
-static int onConnect(struct WebbyConnection *connection)
-{
-	//printf("[WsOnConnect] %s\n", connection->request.uri);
-	return 0;
-}
-
-static void onConnected(struct WebbyConnection *connection)
-{
-	//printf("[WsOnConnected]\n");
-	s_WebSocketServer->WsOnConnected(connection);
-}
-
-static void onDisconnected(struct WebbyConnection *connection)
-{
-	//printf("[WsOnDisconnected]\n");
-	s_WebSocketServer->WsOnDisconnected(connection);
-}
-
-static int onFrame(struct WebbyConnection *connection, const struct WebbyWsFrame *frame)
-{
-	//printf("[WsOnFrame]\n");
-	return s_WebSocketServer->WsOnFrame(connection, frame);
-}
