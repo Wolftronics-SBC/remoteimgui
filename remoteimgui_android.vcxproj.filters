@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="src\app\imgui_remote_webby.h" />
+    <ClInclude Include="src\app\imgui_remote.h" />
+    <ClInclude Include="src\app\webby\webby.h" />
+    <ClInclude Include="src\app\webby\webby_unix.h" />
+    <ClInclude Include="src\app\webby\webby_win32.h" />
+    <ClInclude Include="src\app\lz4\lz4.h" />
+    <ClInclude Include="src\app\lz4\lz4frame.h" />
+    <ClInclude Include="src\app\lz4\lz4frame_static.h" />
+    <ClInclude Include="src\app\lz4\lz4hc.h" />
+    <ClInclude Include="src\app\lz4\xxhash.h" />
+    <ClInclude Include="src\app\imgui\imconfig.h" />
+    <ClInclude Include="src\app\imgui\imgui.h" />
+    <ClInclude Include="src\app\imgui\imgui_internal.h" />
+    <ClInclude Include="src\app\imgui\stb_rect_pack.h" />
+    <ClInclude Include="src\app\imgui\stb_textedit.h" />
+    <ClInclude Include="src\app\imgui\stb_truetype.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\app\webby\webby.c" />
+    <ClCompile Include="src\app\lz4\lz4.c" />
+    <ClCompile Include="src\app\lz4\lz4frame.c" />
+    <ClCompile Include="src\app\lz4\lz4hc.c" />
+    <ClCompile Include="src\app\lz4\xxhash.c" />
+    <ClCompile Include="src\app\imgui\imgui.cpp" />
+    <ClCompile Include="src\app\imgui\imgui_draw.cpp" />
+    <ClCompile Include="src\app\imgui\imgui_demo.cpp" />
+    <ClCompile Include="src\app\imgui_remote.cpp" />
+    <ClCompile Include="src\app\imgui_remote_webby.cpp" />
+  </ItemGroup>
+</Project>
