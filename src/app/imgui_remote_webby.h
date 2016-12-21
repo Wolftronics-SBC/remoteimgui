@@ -25,7 +25,7 @@
 
 struct IWebSocketServer;
 
-IWebSocketServer *s_WebSocketServer;
+static IWebSocketServer *s_WebSocketServer;
 
 struct IWebSocketServer
 {
