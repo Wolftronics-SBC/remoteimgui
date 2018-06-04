@@ -33,12 +33,18 @@
 #include <GLFW/glfw3.h>
 #define OFFSETOF(TYPE, ELEMENT) ((size_t)&(((TYPE *)0)->ELEMENT))
 
+// GLFW data
 static GLFWwindow* window;
-static bool mousePressed[2] = { false, false };
+static double       g_Time = 0.0;
+static bool         g_MouseJustPressed[3] = { false, false, false };
+static GLFWcursor*  g_MouseCursors[ImGuiMouseCursor_COUNT] = { 0 };
 
-// This is the main rendering function that you have to implement and provide to ImGui (via setting up 'RenderDrawListsFn' in the ImGuiIO structure)
-// If text or lines are blurry when integrating ImGui in your engine:
-// - in your Render function, try translating your projection matrix by (0.5f,0.5f) or (0.375f,0.375f)
+// OpenGL data
+static GLuint       g_FontTexture = 0;
+
+// OpenGL2 Render function.
+// (this used to be set in io.RenderDrawListsFn and called by ImGui::Render(), but you can now call this directly from your main loop)
+// Note that this implementation is little overcomplicated because we are saving/setting up/restoring every OpenGL state explicitly, in order to be able to run within any OpenGL engine that doesn't do so. 
 static void ImImpl_RenderDrawLists(ImDrawData* draw_data)
 {
 	// @RemoteImgui begin
@@ -49,8 +55,11 @@ static void ImImpl_RenderDrawLists(ImDrawData* draw_data)
         return;
 
     // We are using the OpenGL fixed pipeline to make the example code simpler to read!
-    // A probable faster way to render would be to collate all vertices from all cmd_lists into a single vertex buffer.
-    // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled, vertex/texcoord/color pointers.
+    // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled, vertex/texcoord/color pointers, polygon fill.
+    GLint last_texture; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+    GLint last_polygon_mode[2]; glGetIntegerv(GL_POLYGON_MODE, last_polygon_mode);
+    GLint last_viewport[4]; glGetIntegerv(GL_VIEWPORT, last_viewport);
+    GLint last_scissor_box[4]; glGetIntegerv(GL_SCISSOR_BOX, last_scissor_box); 
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_TRANSFORM_BIT);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -61,6 +70,8 @@ static void ImImpl_RenderDrawLists(ImDrawData* draw_data)
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
     glEnable(GL_TEXTURE_2D);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    //glUseProgram(0); // You may want this if using this code in an OpenGL 3+ context where shaders may be bound
 
     // Setup orthographic projection matrix
     int display_w, display_h;
@@ -75,72 +86,79 @@ static void ImImpl_RenderDrawLists(ImDrawData* draw_data)
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-    // Render command lists
 
-	for (int n = 0; n < draw_data->CmdListsCount; n++)
-	{
-		const ImDrawList* cmd_list = draw_data->CmdLists[n];
+    // Render command lists
+    for (int n = 0; n < draw_data->CmdListsCount; n++)
+    {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
 		const unsigned char* vtx_buffer = (const unsigned char*)&cmd_list->VtxBuffer.front();
 		const ImDrawIdx* idx_buffer = &cmd_list->IdxBuffer.front();
-		glVertexPointer(2, GL_FLOAT, sizeof(ImDrawVert), (void*)(vtx_buffer + OFFSETOF(ImDrawVert, pos)));
-		glTexCoordPointer(2, GL_FLOAT, sizeof(ImDrawVert), (void*)(vtx_buffer + OFFSETOF(ImDrawVert, uv)));
-		glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(ImDrawVert), (void*)(vtx_buffer + OFFSETOF(ImDrawVert, col)));
+        glVertexPointer(2, GL_FLOAT, sizeof(ImDrawVert), (const GLvoid*)((const char*)vtx_buffer + IM_OFFSETOF(ImDrawVert, pos)));
+        glTexCoordPointer(2, GL_FLOAT, sizeof(ImDrawVert), (const GLvoid*)((const char*)vtx_buffer + IM_OFFSETOF(ImDrawVert, uv)));
+        glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(ImDrawVert), (const GLvoid*)((const char*)vtx_buffer + IM_OFFSETOF(ImDrawVert, col)));
 
-		for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.size(); cmd_i++)
-		{
-			const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-			if (pcmd->UserCallback)
-			{
-				pcmd->UserCallback(cmd_list, pcmd);
-			}
-			else
-			{
-				glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+        {
+            const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback)
+            {
+                pcmd->UserCallback(cmd_list, pcmd);
+            }
+            else
+            {
+                glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)pcmd->TextureId);
 				glScissor((int)pcmd->ClipRect.x, (int)(height - pcmd->ClipRect.w), (int)(pcmd->ClipRect.z - pcmd->ClipRect.x), (int)(pcmd->ClipRect.w - pcmd->ClipRect.y));
-				glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, GL_UNSIGNED_SHORT, idx_buffer);
-			}
-			idx_buffer += pcmd->ElemCount;
-		}
-	}
+                glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer);
+            }
+            idx_buffer += pcmd->ElemCount;
+        }
+    }
 
     // Restore modified state
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)last_texture);
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glPopAttrib();
+    glPolygonMode(GL_FRONT, (GLenum)last_polygon_mode[0]); glPolygonMode(GL_BACK, (GLenum)last_polygon_mode[1]);
+    glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
+    glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
 }
 
 // NB: ImGui already provide OS clipboard support for Windows so this isn't needed if you are using Windows only.
-static const char* ImImpl_GetClipboardTextFn()
+static const char* ImImpl_GetClipboardTextFn(void* user_data)
 {
+    //return glfwGetClipboardString((GLFWwindow*)user_data);
     return glfwGetClipboardString(window);
 }
 
-static void ImImpl_SetClipboardTextFn(const char* text)
+static void ImImpl_SetClipboardTextFn(void* user_data, const char* text)
 {
+    //glfwSetClipboardString((GLFWwindow*)user_data, text);
     glfwSetClipboardString(window, text);
 }
 
 // GLFW callbacks to get events
 static void glfw_error_callback(int error, const char* description)
 {
-    fputs(description, stderr);
+    fprintf(stderr, "Error %d: %s\n", error, description);
 }
 
 static void glfw_mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
-    if (action == GLFW_PRESS && button >= 0 && button < 2)
-        mousePressed[button] = true;
+    if (action == GLFW_PRESS && button >= 0 && button < 3)
+        g_MouseJustPressed[button] = true;
 }
 
 static void glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     ImGuiIO& io = ImGui::GetIO();
-    io.MouseWheel += (float)yoffset; // Use fractional mouse wheel, 1.0 unit 5 lines.
+    io.MouseWheelH += (float)xoffset;
+    io.MouseWheel += (float)yoffset;
 }
 
 static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -150,14 +168,19 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
         io.KeysDown[key] = true;
     if (action == GLFW_RELEASE)
         io.KeysDown[key] = false;
-    io.KeyCtrl = (mods & GLFW_MOD_CONTROL) != 0;
-    io.KeyShift = (mods & GLFW_MOD_SHIFT) != 0;
+
+    (void)mods; // Modifiers are not reliable across systems
+    io.KeyCtrl = io.KeysDown[GLFW_KEY_LEFT_CONTROL] || io.KeysDown[GLFW_KEY_RIGHT_CONTROL];
+    io.KeyShift = io.KeysDown[GLFW_KEY_LEFT_SHIFT] || io.KeysDown[GLFW_KEY_RIGHT_SHIFT];
+    io.KeyAlt = io.KeysDown[GLFW_KEY_LEFT_ALT] || io.KeysDown[GLFW_KEY_RIGHT_ALT];
+    io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
 }
 
 static void glfw_char_callback(GLFWwindow* window, unsigned int c)
 {
+    ImGuiIO& io = ImGui::GetIO();
     if (c > 0 && c < 0x10000)
-        ImGui::GetIO().AddInputCharacter((unsigned short)c);
+        io.AddInputCharacter((unsigned short)c);
 }
 
 void InitGL()
@@ -168,11 +191,19 @@ void InitGL()
 
     window = glfwCreateWindow(1280, 720, "ImGui OpenGL2 example", NULL, NULL);
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // Enable vsync
+
+    // Setup Dear ImGui binding
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
     glfwSetKeyCallback(window, glfw_key_callback);
     glfwSetMouseButtonCallback(window, glfw_mouse_button_callback);
     glfwSetScrollCallback(window, glfw_scroll_callback);
     glfwSetCharCallback(window, glfw_char_callback);
-
+    // Setup style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsClassic();
 }
 
 void LoadFontsTexture()
@@ -186,32 +217,51 @@ void LoadFontsTexture()
 
     unsigned char* pixels;
     int width, height;
-    io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+    //io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bits (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
 
-    GLuint tex_id;
-    glGenTextures(1, &tex_id);
-    glBindTexture(GL_TEXTURE_2D, tex_id);
+    // Upload texture to graphics system
+    GLint last_texture;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+    glGenTextures(1, &g_FontTexture);
+    glBindTexture(GL_TEXTURE_2D, g_FontTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, pixels);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
     // Store our identifier
-    io.Fonts->TexID = (void *)(intptr_t)tex_id;
+    io.Fonts->TexID = (void *)(intptr_t)g_FontTexture;
+
+    // Restore state
+    glBindTexture(GL_TEXTURE_2D, last_texture);
+
 }
 
 void InitImGui()
 {
+    g_Time = 0.0;
+
+    // Setup back-end capabilities flags
     ImGuiIO& io = ImGui::GetIO();
-    io.DeltaTime = 1.0f/60.0f;                                    // Time elapsed since last frame, in seconds (in this sample app we'll override this every frame because our time step is variable)
-    io.KeyMap[ImGuiKey_Tab] = GLFW_KEY_TAB;                       // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;   // We can honor GetMouseCursor() values (optional)
+    io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;    // We can honor io.WantSetMousePos requests (optional, rarely used)
+
+    // Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
+    io.KeyMap[ImGuiKey_Tab] = GLFW_KEY_TAB;
     io.KeyMap[ImGuiKey_LeftArrow] = GLFW_KEY_LEFT;
     io.KeyMap[ImGuiKey_RightArrow] = GLFW_KEY_RIGHT;
     io.KeyMap[ImGuiKey_UpArrow] = GLFW_KEY_UP;
     io.KeyMap[ImGuiKey_DownArrow] = GLFW_KEY_DOWN;
+    io.KeyMap[ImGuiKey_PageUp] = GLFW_KEY_PAGE_UP;
+    io.KeyMap[ImGuiKey_PageDown] = GLFW_KEY_PAGE_DOWN;
     io.KeyMap[ImGuiKey_Home] = GLFW_KEY_HOME;
     io.KeyMap[ImGuiKey_End] = GLFW_KEY_END;
+    io.KeyMap[ImGuiKey_Insert] = GLFW_KEY_INSERT;
     io.KeyMap[ImGuiKey_Delete] = GLFW_KEY_DELETE;
     io.KeyMap[ImGuiKey_Backspace] = GLFW_KEY_BACKSPACE;
+    io.KeyMap[ImGuiKey_Space] = GLFW_KEY_SPACE;
     io.KeyMap[ImGuiKey_Enter] = GLFW_KEY_ENTER;
     io.KeyMap[ImGuiKey_Escape] = GLFW_KEY_ESCAPE;
     io.KeyMap[ImGuiKey_A] = GLFW_KEY_A;
@@ -224,9 +274,21 @@ void InitImGui()
     io.RenderDrawListsFn = ImImpl_RenderDrawLists;
     io.SetClipboardTextFn = ImImpl_SetClipboardTextFn;
     io.GetClipboardTextFn = ImImpl_GetClipboardTextFn;
+    io.ClipboardUserData = window;
+#ifdef _WIN32
+    io.ImeWindowHandle = glfwGetWin32Window(g_Window);
+#endif
+    // Load cursors
+    // FIXME: GLFW doesn't expose suitable cursors for ResizeAll, ResizeNESW, ResizeNWSE. We revert to arrow cursor for those.
+    g_MouseCursors[ImGuiMouseCursor_Arrow] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_TextInput] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_ResizeAll] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_ResizeNS] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_ResizeEW] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_ResizeNESW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_MouseCursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
 
     LoadFontsTexture();
-
 	// @RemoteImgui begin
 	ImGui::RemoteInit("0.0.0.0", 7002); // local host, local port
 	//ImGui::GetStyle().WindowRounding = 0.f; // no rounding uses less bandwidth
@@ -236,19 +298,23 @@ void InitImGui()
 
 void UpdateImGui()
 {
+    if (!g_FontTexture)
+	LoadFontsTexture();
+
     ImGuiIO& io = ImGui::GetIO();
 
-    // Setup resolution (every frame to accommodate for window resizing)
+    // Setup display size (every frame to accommodate for window resizing)
     int w, h;
     int display_w, display_h;
     glfwGetWindowSize(window, &w, &h);
     glfwGetFramebufferSize(window, &display_w, &display_h);
+    io.DisplaySize = ImVec2((float)w, (float)h);
+    io.DisplayFramebufferScale = ImVec2(w > 0 ? ((float)display_w / w) : 0, h > 0 ? ((float)display_h / h) : 0);
 
     // Setup time step
-    static double time = 0.0f;
-    const double current_time =  glfwGetTime();
-    io.DeltaTime = (float)(current_time - time);
-    time = current_time;
+    double current_time =  glfwGetTime();
+    io.DeltaTime = g_Time > 0.0 ? (float)(current_time - g_Time) : (float)(1.0f/60.0f);
+    g_Time = current_time;
 
 	// @RemoteImgui begin
 	ImGui::RemoteUpdate();
@@ -305,18 +371,50 @@ void UpdateImGui()
 		io.KeyMap[ImGuiKey_Y] = 'y';
 		io.KeyMap[ImGuiKey_Z] = 'z';
 
-		// Setup inputs
-		// (we already got mouse wheel, keyboard keys & characters from glfw callbacks polled in glfwPollEvents())
-		double mouse_x, mouse_y;
-		glfwGetCursorPos(window, &mouse_x, &mouse_y);
-		mouse_x *= (float)display_w / w;                                                               // Convert mouse coordinates to pixels
-		mouse_y *= (float)display_h / h;
-		io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);                                          // Mouse position, in pixels (set to -1,-1 if no mouse / on another screen, etc.)
-		io.MouseDown[0] = mousePressed[0] || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != 0;  // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
-		io.MouseDown[1] = mousePressed[1] || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) != 0;
-	}
+    // Setup inputs
+    // (we already got mouse wheel, keyboard keys & characters from glfw callbacks polled in glfwPollEvents())
+    if (glfwGetWindowAttrib(window, GLFW_FOCUSED))
+    {
+        // Set OS mouse position if requested (only used when ImGuiConfigFlags_NavEnableSetMousePos is enabled by user)
+        if (io.WantSetMousePos)
+        {
+            glfwSetCursorPos(window, (double)io.MousePos.x, (double)io.MousePos.y);
+        }
+        else
+        {
+            double mouse_x, mouse_y;
+            glfwGetCursorPos(window, &mouse_x, &mouse_y);
+            io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
+        }
+    }
+    else
+    {
+        io.MousePos = ImVec2(-FLT_MAX,-FLT_MAX);
+    }
 
-    // Start the frame
+    for (int i = 0; i < 3; i++)
+    {
+        // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
+        io.MouseDown[i] = g_MouseJustPressed[i] || glfwGetMouseButton(window, i) != 0;
+        g_MouseJustPressed[i] = false;
+    }
+
+    // Update OS/hardware mouse cursor if imgui isn't drawing a software cursor
+    if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) == 0 && glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED)
+    {
+        ImGuiMouseCursor cursor = ImGui::GetMouseCursor();
+        if (io.MouseDrawCursor || cursor == ImGuiMouseCursor_None)
+        {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        }
+        else
+        {
+            glfwSetCursor(window, g_MouseCursors[cursor] ? g_MouseCursors[cursor] : g_MouseCursors[ImGuiMouseCursor_Arrow]);
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
+  }
+    // Start the frame. This call will update the io.WantCaptureMouse, io.WantCaptureKeyboard flag that you can use to dispatch inputs (or not) to your application.
     ImGui::NewFrame();
 }
 
@@ -326,67 +424,80 @@ int main(int argc, char** argv)
     InitGL();
     InitImGui();
 
-    bool show_test_window = true;
+    bool show_demo_window = true;
     bool show_another_window = false;
-    ImVec4 clear_col = ImColor(114, 144, 154);
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    // Main loop
     while (!glfwWindowShouldClose(window))
     {
         ImGuiIO& io = ImGui::GetIO();
-        mousePressed[0] = mousePressed[1] = false;
+        g_MouseJustPressed[0] = g_MouseJustPressed[1] = false;
         glfwPollEvents();
         UpdateImGui();
 
-        // 1. Show a simple window
-        // Tip: if we don't call ImGui::Begin()/ImGui::End() the widgets appears in a window automatically called "Debug"
+        // 1. Show a simple window.
+        // Tip: if we don't call ImGui::Begin()/ImGui::End() the widgets automatically appears in a window called "Debug".
         {
-            static float f;
-            ImGui::Text("Hello, world!");
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-            ImGui::ColorEdit3("clear color", (float*)&clear_col);
-            if (ImGui::Button("Test Window")) show_test_window ^= 1;
-            if (ImGui::Button("Another Window")) show_another_window ^= 1;
+            static float f = 0.0f;
+            static int counter = 0;
+            ImGui::Text("Hello, world!");                           // Display some text (you can use a format string too)
+            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f    
+            ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
-            // Calculate and show frame rate
-            static float ms_per_frame[120] = { 0 };
-            static int ms_per_frame_idx = 0;
-            static float ms_per_frame_accum = 0.0f;
-            ms_per_frame_accum -= ms_per_frame[ms_per_frame_idx];
-            ms_per_frame[ms_per_frame_idx] = ImGui::GetIO().DeltaTime * 1000.0f;
-            ms_per_frame_accum += ms_per_frame[ms_per_frame_idx];
-            ms_per_frame_idx = (ms_per_frame_idx + 1) % 120;
-            const float ms_per_frame_avg = ms_per_frame_accum / 120;
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", ms_per_frame_avg, 1000.0f / ms_per_frame_avg);
+            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our windows open/close state
+            ImGui::Checkbox("Another Window", &show_another_window);
+
+            if (ImGui::Button("Button"))                            // Buttons return true when clicked (NB: most widgets return true when edited/activated)
+                counter++;
+            ImGui::SameLine();
+            ImGui::Text("counter = %d", counter);
+
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         }
 
-        // 2. Show another simple window, this time using an explicit Begin/End pair
+        // 2. Show another simple window. In most cases you will use an explicit Begin/End pair to name your windows.
         if (show_another_window)
         {
-            ImGui::Begin("Another Window", &show_another_window, ImVec2(200,100));
-            ImGui::Text("Hello");
+            ImGui::Begin("Another Window", &show_another_window);
+            ImGui::Text("Hello from another window!");
+            if (ImGui::Button("Close Me"))
+                show_another_window = false;
             ImGui::End();
         }
 
-        // 3. Show the ImGui test window. Most of the sample code is in ImGui::ShowTestWindow()
-        if (show_test_window)
+        // 3. Show the ImGui demo window. Most of the sample code is in ImGui::ShowDemoWindow(). Read its code to learn more about Dear ImGui!
+        if (show_demo_window)
         {
-            ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiSetCond_FirstUseEver);
-            ImGui::ShowTestWindow(&show_test_window);
+            ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver); // Normally user code doesn't need/want to call this because positions are saved in .ini file anyway. Here we just want to make the demo initial state a bit more friendly!
+            ImGui::ShowDemoWindow(&show_demo_window);
         }
 
-	    int display_w, display_h;
-		glfwGetFramebufferSize(window, &display_w, &display_h);
 
-		// Rendering
+	// Rendering
+	int display_w, display_h;
+	glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
-        glClearColor(clear_col.x, clear_col.y, clear_col.z, clear_col.w);
+        glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
+        //glUseProgram(0); // You may want this if using this code in an OpenGL 3+ context where shaders may be bound, but prefer using the GL3+ code.
         ImGui::Render();
         glfwSwapBuffers(window);
     }
 
     // Cleanup
-    ImGui::Shutdown();
+    ImGui::DestroyContext();
+    // Destroy GLFW mouse cursors
+    for (ImGuiMouseCursor cursor_n = 0; cursor_n < ImGuiMouseCursor_COUNT; cursor_n++)
+        glfwDestroyCursor(g_MouseCursors[cursor_n]);
+    memset(g_MouseCursors, 0, sizeof(g_MouseCursors));
+    if (g_FontTexture)
+    {
+        glDeleteTextures(1, &g_FontTexture);
+        ImGui::GetIO().Fonts->TexID = 0;
+        g_FontTexture = 0;
+    }
+    glfwDestroyWindow(window);
     glfwTerminate();
 
     return 0;

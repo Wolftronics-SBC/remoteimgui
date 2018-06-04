@@ -174,7 +174,7 @@ struct WebSocketServer : public IWebSocketServer
 				else if (strstr((char *)data, "ImClipboard="))
 				{
 					char *clipboard = &((char *)data)[strlen("ImClipboard=")];
-					ImGui::GetIO().SetClipboardTextFn(clipboard);
+					ImGui::GetIO().SetClipboardTextFn(NULL ,clipboard);
 				}
 				break;
 			// Binary message
@@ -377,12 +377,12 @@ void RemoteDraw(ImDrawList** const cmd_lists, int cmd_lists_count)
 {
 	if (GServer.ClientActive)
 	{
-		//static int sendframe = 0;
-		//if (sendframe++ < 2) // every 2 frames, @TWEAK
-		//{
-		//	return;
-		//}
-		//sendframe = 0;
+		static int sendframe = 0;
+		if (sendframe++ < 2) // every 2 frames, @TWEAK
+		{
+			return;
+		}
+		sendframe = 0;
 
 		unsigned int totalSize = sizeof(unsigned int); // cmd_lists_count
 		for (int n = 0; n < cmd_lists_count; n++)

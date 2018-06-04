@@ -41,7 +41,6 @@ INCLUDEPATH+= 	$$IMGUI_BASE_PATH				\
 
 HEADERS+=  $$IMGUI_BASE_PATH"/imgui.h"						    \
 	   $$IMGUI_BASE_PATH"/imconfig.h"						    \
-	   "imgui_impl_glfw_gl2.h"	    \
 	   "../imgui_remote.h" \
 	   "../imgui_remote_webby.h" \
 	   $$WEBBY_BASE_PATH"/webby.h"						    
